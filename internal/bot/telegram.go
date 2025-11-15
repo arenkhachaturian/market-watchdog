@@ -15,11 +15,11 @@ import (
 
 type TelegramBot struct {
 	api 	  *tgbot.BotAPI
-	alertRepo store.alertRepo
+	alertRepo store.AlertRepo
 }
 
 func NewTelegramBot(botToken string, alertRepo store.AlertRepo) (*TelegramBot, error) {
-	api, err := tgbot.NewBotApi(botToken)
+	api, err := tgbot.NewBotAPI(botToken)
 	if err != nil {
 		return nil, err
 	}
@@ -49,10 +49,10 @@ func (telegramBot *TelegramBot) handle(message *tgbot.Message) {
 	switch {
 	case strings.HasPrefix(text, "/start"):
 		telegramBot.reply(message.Chat.ID, "Commands: /add <coin> <gt|lt> <value>, /list, /rm <id>")
-	case strings.HasPrefix(text, "/add")
-		telegram.cmdAdd(message)
-	case strigns.HasPrefix(text, "/list")
-		telegram.cmdList(message)
+	case strings.HasPrefix(text, "/add"):
+		telegramBot.cmdAdd(message)
+	case strings.HasPrefix(text, "/list"):
+		telegramBot.cmdList(message)
 	case strings.HasPrefix(text, "/rm"):
 		telegramBot.cmdRemove(message)
 	default:
@@ -85,7 +85,7 @@ func (telegramBot *TelegramBot) cmdAdd(message *tgbot.Message) {
 		return
 	}
 
-	newID, err := telegramBot.alertRepo.Create(message.Context(), core.AlertRule{
+	newID, err := telegramBot.alertRepo.Create(context.TODO(), core.AlertRule{
 		UserID:      int(message.Chat.ID), // treat chat ID as user ID for now
 		Coin:        coin,
 		Comparator:  comparator,
@@ -101,7 +101,7 @@ func (telegramBot *TelegramBot) cmdAdd(message *tgbot.Message) {
 }
 
 func (telegramBot *TelegramBot) cmdList(message *tgbot.Message) {
-	alerts, err := telegramBot.alertRepo.ListByUser(message.Context(), int(message.Chat.ID))
+	alerts, err := telegramBot.alertRepo.ListByUser(context.TODO(), int(message.Chat.ID))
 	if err != nil {
 		telegramBot.reply(message.Chat.ID, "Failed to list")
 		return
@@ -130,7 +130,7 @@ func (telegramBot *TelegramBot) cmdRemove(message *tgbot.Message) {
 		telegramBot.reply(message.Chat.ID, "Id must be a number")
 		return
 	}
-	if err := telegramBot.alertRepo.Delete(message.Context(), int(message.Chat.ID), alertID); err != nil {
+	if err := telegramBot.alertRepo.Delete(context.TODO(), int(message.Chat.ID), alertID); err != nil {
 		telegramBot.reply(message.Chat.ID, "Not found")
 		return
 	}
