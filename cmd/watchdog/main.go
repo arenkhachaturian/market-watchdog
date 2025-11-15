@@ -1,21 +1,167 @@
 package main
 
 import (
-	"log"
-	"context"
-	"github.com/joho/godotenv"
-	inMemoryAlerts "github.com/arenkhachaturian/market-watchdog/internal/store/memory"
-	bot "github.com/arenkhachaturian/market-watchdog/internal/bot"
+    "context"
+    "log"
+    "os"
+    "os/signal"
+    "syscall"
+    "time"
+
+    "github.com/joho/godotenv"
+
+    inMemoryAlerts "github.com/arenkhachaturian/market-watchdog/internal/store/memory"
+    bot "github.com/arenkhachaturian/market-watchdog/internal/bot"
+    "github.com/arenkhachaturian/market-watchdog/internal/outbox"
+    "github.com/arenkhachaturian/market-watchdog/internal/core"
+    "github.com/arenkhachaturian/market-watchdog/internal/fetcher"
+    "github.com/arenkhachaturian/market-watchdog/internal/notifier"
 )
 
+const maxRetry = 3
+
 func main() {
-	myEnv, err := godotenv.Read(".env")
-	if err != nil {
-		log.Fatalf("Error loading .env file: %v", err)
-	}
-	botToken := myEnv["TELEGRAM_TOKEN"]
-	alertRepo := inMemoryAlerts.NewAlerts()
-	tgBot, _ := bot.NewTelegramBot(botToken, alertRepo)
-	tgBot.Run(context.Background())
-	
+    if err := godotenv.Load(".env"); err != nil {
+        log.Printf("[warn] failed to load .env: %v", err)
+    }
+
+    ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+    defer stop()
+
+    token := os.Getenv("TELEGRAM_TOKEN")
+    if token == "" {
+        log.Fatal("[fatal] TELEGRAM_TOKEN is not set")
+    }
+
+    log.Println("[startup] market-watchdog booting")
+
+    // ----------------------------------
+    // ALERT REPO
+    // ----------------------------------
+    alertRepo := inMemoryAlerts.NewAlerts()
+    log.Println("[startup] AlertRepo initialized")
+
+    // ----------------------------------
+    // TELEGRAM BOT
+    // ----------------------------------
+    tgBot, err := bot.NewTelegramBot(token, alertRepo)
+    if err != nil {
+        log.Fatalf("[fatal] failed to create Telegram bot: %v", err)
+    }
+    log.Println("[startup] Telegram bot created")
+
+    // ----------------------------------
+    // SENDER (Telegram)
+    // ----------------------------------
+    sender, err := notifier.NewTelegramSender(token)
+    if err != nil {
+        log.Fatalf("[fatal] failed to create Telegram sender: %v", err)
+    }
+    log.Println("[startup] Telegram sender created")
+
+    // ----------------------------------
+    // OUTBOX
+    // ----------------------------------
+    ob := outbox.New(maxRetry)
+    log.Println("[startup] Outbox initialized")
+
+    // ----------------------------------
+    // FETCHER + EVALUATOR
+    // ----------------------------------
+    fetch := fetcher.NewCoinGeckoFetcher()
+    eval := core.NewEvaluator(fetch)
+    log.Println("[startup] Fetcher + Evaluator initialized")
+
+    // ----------------------------------
+    // BOT GOROUTINE
+    // ----------------------------------
+    go func() {
+        log.Println("[bot] starting Telegram listener...")
+        if err := tgBot.Run(ctx); err != nil {
+            log.Printf("[bot] stopped: %v", err)
+        }
+    }()
+
+    // ----------------------------------
+    // WATCHDOG GOROUTINE
+    // ----------------------------------
+    go func() {
+        log.Println("[watchdog] starting loop...")
+        ticker := time.NewTicker(20 * time.Second)
+        defer ticker.Stop()
+
+        for {
+            select {
+            case <-ctx.Done():
+                log.Println("[watchdog] shutdown signal received")
+                return
+            case now := <-ticker.C:
+                runWatcherCycle(ctx, now, alertRepo, eval, ob, sender)
+            }
+        }
+    }()
+
+    log.Println("[startup] system running. Press Ctrl+C to stop.")
+    <-ctx.Done()
+    log.Println("[shutdown] exiting")
+}
+
+func runWatcherCycle(
+    ctx context.Context,
+    now time.Time,
+    repo *inMemoryAlerts.Alerts,
+    eval *core.Evaluator,
+    ob *outbox.Outbox,
+    sender notifier.Sender,
+) {
+    rules, err := repo.ListActive(ctx)
+    if err != nil {
+        log.Printf("[repo] list error: %v", err)
+        return
+    }
+
+    if len(rules) == 0 {
+        log.Println("[watchdog] no rules found")
+        return
+    }
+
+    log.Printf("[watchdog] evaluating %d rule(s)...", len(rules))
+
+    triggered, err := eval.EvaluateRules(rules, now)
+    if err != nil {
+        log.Printf("[evaluator] error: %v", err)
+        return
+    }
+
+    if len(triggered) == 0 {
+        log.Println("[watchdog] no triggers (conditions/cooldown)")
+        return
+    }
+
+    for _, t := range triggered {
+        log.Printf("[watchdog] TRIGGERED: ID=%d coin=%s threshold=%.4f comp=%v",
+            t.ID, t.Coin, t.Threshold, t.Comparator)
+    }
+
+    core.EnqueueMatches(ob, triggered)
+
+    // POP & SEND
+    pending := ob.PopAll()
+    log.Printf("[outbox] delivering %d message(s)", len(pending))
+
+    for _, a := range pending {
+        msg := core.FormatAlert(a)
+        log.Printf("[outbox] sending to user=%d: %s", a.UserID, msg)
+
+        if err := sender.Send(ctx, a.UserID, msg); err != nil {
+            log.Printf("[outbox] send failed for ID=%d: %v", a.ID, err)
+            ob.Push(a)
+        } else {
+            if err := repo.UpdateLastNotified(ctx, a.ID, now); err != nil {
+                log.Printf("[repo] failed to update timestamp ID=%d: %v", a.ID, err)
+            }
+        }
+    }
+
+    log.Println("[watchdog] cycle complete")
 }
