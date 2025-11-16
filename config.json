@@ -1,0 +1,7 @@
+{
+  "poll_interval_seconds": 20,
+  "default_cooldown_min": 30,
+  "outbox_max_retry": 3,
+  "store_kind": "memory",
+  "db_path": "./alerts.db"
+}

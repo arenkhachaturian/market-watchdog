@@ -17,9 +17,9 @@ import (
     "github.com/arenkhachaturian/market-watchdog/internal/fetcher"
     "github.com/arenkhachaturian/market-watchdog/internal/notifier"
 	"github.com/arenkhachaturian/market-watchdog/internal/store"
+	"github.com/arenkhachaturian/market-watchdog/internal/config"
 )
 
-const maxRetry = 3
 
 func main() {
     if err := godotenv.Load(".env"); err != nil {
@@ -36,10 +36,15 @@ func main() {
 
     log.Println("[startup] market-watchdog booting")
 
+	cfg, err := config.Load("config.json")
+	if err != nil {
+		log.Fatalf("[fatal] failed to load config.json: %v", err)
+	}
+
     // ----------------------------------
     // ALERT REPO
     // ----------------------------------
-    alertRepo := inMemoryAlerts.NewAlerts()
+    alertRepo := inMemoryAlerts.NewAlerts(cfg.DefaultCooldownMin)
     log.Println("[startup] AlertRepo initialized")
 
     // ----------------------------------
@@ -63,7 +68,7 @@ func main() {
     // ----------------------------------
     // OUTBOX
     // ----------------------------------
-    ob := outbox.New(maxRetry)
+    ob := outbox.New(cfg.OutboxMaxRetry)
     log.Println("[startup] Outbox initialized")
 
     // ----------------------------------
@@ -88,7 +93,7 @@ func main() {
     // ----------------------------------
     go func() {
         log.Println("[watchdog] starting loop...")
-        ticker := time.NewTicker(20 * time.Second)
+		ticker := time.NewTicker(time.Duration(cfg.PollIntervalSeconds) * time.Second)
         defer ticker.Stop()
 
         for {

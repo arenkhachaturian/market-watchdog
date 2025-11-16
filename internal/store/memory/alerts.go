@@ -11,12 +11,15 @@ import (
 )
 
 type Alerts struct {
-	mu sync.Mutex
-	seq int
-	all []core.AlertRule
+	mu 				   sync.Mutex
+	seq 			   int
+	all 			   []core.AlertRule
+	defaultCooldownMin int
 }
 
-func NewAlerts() *Alerts { return &Alerts{} }
+func NewAlerts(defaultCooldownMin int) *Alerts {
+	return &Alerts{defaultCooldownMin: defaultCooldownMin}
+}
 
 func (repo *Alerts) Create(_ context.Context, alert core.AlertRule) (int, error) {
 	repo.mu.Lock()
@@ -24,7 +27,7 @@ func (repo *Alerts) Create(_ context.Context, alert core.AlertRule) (int, error)
 	repo.seq++
 	alert.ID = repo.seq
 	if alert.CooldownMin == 0 {
-		alert.CooldownMin = 30
+		alert.CooldownMin = repo.defaultCooldownMin
 	}
 	repo.all = append(repo.all, alert)
 	return alert.ID, nil

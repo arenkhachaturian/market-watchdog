@@ -10,7 +10,7 @@ import (
 )
 
 func TestAlertsRepo(t *testing.T) {
-	alertRepo := NewAlerts()
+	alertRepo := NewAlerts(1)
 	ctx := context.Background()
 
 	// create two alerts
