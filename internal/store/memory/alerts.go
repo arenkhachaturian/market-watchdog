@@ -63,6 +63,8 @@ func (repo *Alerts) Delete(_ context.Context, userID int, alertID int) error {
 
 // refactor after move on go 1.21
 func (r *Alerts) ListActive(_ context.Context) ([]core.AlertRule, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	out := make([]core.AlertRule, len(r.all))
 	copy(out, r.all)
 	return out, nil
