@@ -16,6 +16,7 @@ import (
     "github.com/arenkhachaturian/market-watchdog/internal/core"
     "github.com/arenkhachaturian/market-watchdog/internal/fetcher"
     "github.com/arenkhachaturian/market-watchdog/internal/notifier"
+	"github.com/arenkhachaturian/market-watchdog/internal/store"
 )
 
 const maxRetry = 3
@@ -109,7 +110,7 @@ func main() {
 func runWatcherCycle(
     ctx context.Context,
     now time.Time,
-    repo *inMemoryAlerts.Alerts,
+    repo store.AlertRepo,
     eval *core.Evaluator,
     ob *outbox.Outbox,
     sender notifier.Sender,
@@ -124,8 +125,6 @@ func runWatcherCycle(
         log.Println("[watchdog] no rules found")
         return
     }
-
-    log.Printf("[watchdog] evaluating %d rule(s)...", len(rules))
 
     triggered, err := eval.EvaluateRules(rules, now)
     if err != nil {
@@ -144,26 +143,7 @@ func runWatcherCycle(
     }
 
     core.EnqueueMatches(ob, triggered)
-
 	core.DeliverOnce(ctx, ob, sender)
-
-    // POP & SEND
-    // pending := ob.PopAll()
-    // log.Printf("[outbox] delivering %d message(s)", len(pending))
-	
-    // for _, a := range pending {
-    //     msg := core.FormatAlert(a)
-    //     log.Printf("[outbox] sending to user=%d: %s", a.UserID, msg)
-
-    //     if err := sender.Send(ctx, a.UserID, msg); err != nil {
-    //         log.Printf("[outbox] send failed for ID=%d: %v", a.ID, err)
-    //         ob.Push(a)
-    //     } else {
-    //         if err := repo.UpdateLastNotified(ctx, a.ID, now); err != nil {
-    //             log.Printf("[repo] failed to update timestamp ID=%d: %v", a.ID, err)
-    //         }
-    //     }
-    // }
 
     log.Println("[watchdog] cycle complete")
 }
