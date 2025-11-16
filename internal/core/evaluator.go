@@ -1,6 +1,7 @@
 package core
 
 import (
+	"log"
 	"time"
 
 	"github.com/arenkhachaturian/market-watchdog/internal/fetcher"
@@ -27,7 +28,8 @@ func (e *Evaluator) EvaluateRules(rules []AlertRule, now time.Time) ([]AlertRule
 
 		price, err := e.Fetch.GetPrice(rule.Coin)
 		if err != nil {
-			return nil, err
+			log.Printf("[evaluator]Failed to get price for %s: %v", rule.Coin, err)
+			continue
 		}
 
 		switch rule.Comparator {

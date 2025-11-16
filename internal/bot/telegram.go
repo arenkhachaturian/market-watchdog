@@ -90,7 +90,7 @@ func (telegramBot *TelegramBot) cmdAdd(message *tgbot.Message) {
 		Coin:        coin,
 		Comparator:  comparator,
 		Threshold:   threshold,
-		CooldownMin: 30,
+		CooldownMin: 1,
 	})
 	if err != nil {
 		log.Println("create alert:", err)

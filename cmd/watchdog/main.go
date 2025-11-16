@@ -145,23 +145,25 @@ func runWatcherCycle(
 
     core.EnqueueMatches(ob, triggered)
 
+	core.DeliverOnce(ctx, ob, sender)
+
     // POP & SEND
-    pending := ob.PopAll()
-    log.Printf("[outbox] delivering %d message(s)", len(pending))
+    // pending := ob.PopAll()
+    // log.Printf("[outbox] delivering %d message(s)", len(pending))
+	
+    // for _, a := range pending {
+    //     msg := core.FormatAlert(a)
+    //     log.Printf("[outbox] sending to user=%d: %s", a.UserID, msg)
 
-    for _, a := range pending {
-        msg := core.FormatAlert(a)
-        log.Printf("[outbox] sending to user=%d: %s", a.UserID, msg)
-
-        if err := sender.Send(ctx, a.UserID, msg); err != nil {
-            log.Printf("[outbox] send failed for ID=%d: %v", a.ID, err)
-            ob.Push(a)
-        } else {
-            if err := repo.UpdateLastNotified(ctx, a.ID, now); err != nil {
-                log.Printf("[repo] failed to update timestamp ID=%d: %v", a.ID, err)
-            }
-        }
-    }
+    //     if err := sender.Send(ctx, a.UserID, msg); err != nil {
+    //         log.Printf("[outbox] send failed for ID=%d: %v", a.ID, err)
+    //         ob.Push(a)
+    //     } else {
+    //         if err := repo.UpdateLastNotified(ctx, a.ID, now); err != nil {
+    //             log.Printf("[repo] failed to update timestamp ID=%d: %v", a.ID, err)
+    //         }
+    //     }
+    // }
 
     log.Println("[watchdog] cycle complete")
 }
